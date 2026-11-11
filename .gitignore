@@ -1,0 +1,44 @@
+
+# Arquivos específicos do usuário/IDE
+*.user
+*.suo
+*.rsuser
+*.userosscache
+*.sln.docstates
+.vs/
+.vscode/
+
+# Arquivos de compilação
+[Bb]in/
+[Oo]bj/
+[Dd]ebug/
+[Rr]elease/
+artifacts/
+
+# Logs e arquivos temporários
+*.log
+[Ll]og/
+[Ll]ogs/
+*.cache
+*.tmp
+*~
+
+# Configurações e segredos locais
+.env
+.env.*
+!.env.example
+secrets.json
+
+# Certificados e chaves privadas
+*.pfx
+*.p12
+*.key
+
+# Arquivos de publicação
+*.publishsettings
+*.pubxml
+
+# Banco de dados local
+*.db
+*.sqlite
+*.sqlite3
