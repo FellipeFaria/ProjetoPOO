@@ -220,7 +220,7 @@ INSERT INTO Clientes (Id, Nome, CPF, Email, Telefone) VALUES
 (3, 'Rafael Souza', '333.444.555-66', 'rafael.souza@email.com', '(16) 99100-1003'),
 (4, 'Beatriz Lima', '444.555.666-77', 'beatriz.lima@email.com', '(16) 99100-1004'),
 (5, 'Thiago Oliveira', '555.666.777-88', 'thiago.oliveira@email.com', '(16) 99100-1005'),
-(6, NULL, NULL, NULL, NULL); -- Cliente avulso / balcao
+(6, 'Ricardo Costa', NULL, NULL, NULL); -- Cliente avulso / balcao
 
 -- Vendas (6 registros: 5 Concluidas, 1 Cancelada)
 INSERT INTO Vendas (Id, ClienteId, DataHora, FormaPagamento, Status) VALUES
