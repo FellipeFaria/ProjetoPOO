@@ -88,8 +88,8 @@ CREATE TABLE IF NOT EXISTS Vendas (
         )
     ),
 
-    Status TEXT NOT NULL DEFAULT 'Concluida' CHECK (
-        Status IN ('Concluida', 'Cancelada')
+    Status TEXT NOT NULL DEFAULT 'Aberta' CHECK (
+        Status IN ('Aberta', 'Concluida', 'Cancelada')
     ),
 
     FOREIGN KEY (ClienteId) REFERENCES Clientes(Id) ON DELETE RESTRICT
