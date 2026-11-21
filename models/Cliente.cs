@@ -1,4 +1,4 @@
-using ProjetoPOO.Models.Exceptions;
+using ProjetoPOO.Exceptions;
 
 namespace ProjetoPOO.Models;
 

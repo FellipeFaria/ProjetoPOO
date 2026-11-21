@@ -1,4 +1,4 @@
-namespace ProjetoPOO.Models.Exceptions;
+namespace ProjetoPOO.Exceptions;
 
 public class DomainException : Exception
 {

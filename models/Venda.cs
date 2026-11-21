@@ -1,5 +1,5 @@
+using ProjetoPOO.Exceptions;
 using ProjetoPOO.Models.Enums;
-using ProjetoPOO.Models.Exceptions;
 
 namespace ProjetoPOO.Models;
 
