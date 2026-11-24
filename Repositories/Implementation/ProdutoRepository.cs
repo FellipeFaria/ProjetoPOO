@@ -1,5 +1,7 @@
 using System.Data;
+using System.Globalization;
 using Dapper;
+using Microsoft.Data.Sqlite;
 using ProjetoPOO.Exceptions;
 using ProjetoPOO.Models;
 using ProjetoPOO.Models.Enums;
@@ -19,7 +21,7 @@ public class ProdutoRepository(Func<IDbConnection> connectionFactory) : IProduto
 
         var produtosBase = (
             await connection.QueryAsync<ProdutoBaseRow>(
-                "SELECT Id, Nome, Preco, Quantidade, TipoProduto FROM Produtos ORDER BY Id"
+                "SELECT Id, Nome, CAST(Preco AS TEXT) AS Preco, Quantidade, TipoProduto FROM Produtos ORDER BY Id"
             )
         ).ToList();
 
@@ -27,9 +29,7 @@ public class ProdutoRepository(Func<IDbConnection> connectionFactory) : IProduto
 
         foreach (var baseRow in produtosBase)
         {
-            var produto = await HidratarProdutoAsync(connection, baseRow);
-            if (produto is not null)
-                resultado.Add(produto);
+            resultado.Add(await HidratarProdutoAsync(connection, baseRow));
         }
 
         return resultado;
@@ -44,7 +44,7 @@ public class ProdutoRepository(Func<IDbConnection> connectionFactory) : IProduto
         connection.Open();
 
         var baseRow = await connection.QueryFirstOrDefaultAsync<ProdutoBaseRow>(
-            "SELECT Id, Nome, Preco, Quantidade, TipoProduto FROM Produtos WHERE Id = @Id",
+            "SELECT Id, Nome, CAST(Preco AS TEXT) AS Preco, Quantidade, TipoProduto FROM Produtos WHERE Id = @Id",
             new { Id = id }
         );
 
@@ -62,11 +62,26 @@ public class ProdutoRepository(Func<IDbConnection> connectionFactory) : IProduto
     {
         ArgumentNullException.ThrowIfNull(entidade);
 
-        var ownsConnection = externalConnection is null;
-        var connection = externalConnection ?? _connectionFactory();
+        if (transaction is not null && transaction.Connection is null)
+            throw new ArgumentException("A transação não está associada a uma conexão.", nameof(transaction));
 
-        if (ownsConnection && connection.State != ConnectionState.Open)
+        if (
+            externalConnection is not null
+            && transaction is not null
+            && !ReferenceEquals(transaction.Connection, externalConnection)
+        )
+            throw new ArgumentException(
+                "A transação deve pertencer à conexão informada.",
+                nameof(transaction)
+            );
+
+        var ownsConnection = externalConnection is null && transaction is null;
+        var connection = externalConnection ?? transaction?.Connection ?? _connectionFactory();
+        if (connection.State != ConnectionState.Open)
             connection.Open();
+
+        var ownsTransaction = transaction is null;
+        var tx = transaction ?? connection.BeginTransaction();
 
         try
         {
@@ -85,7 +100,7 @@ public class ProdutoRepository(Func<IDbConnection> connectionFactory) : IProduto
                     entidade.Quantidade,
                     entidade.TipoProduto,
                 },
-                transaction
+                tx
             );
 
             switch (entidade)
@@ -103,7 +118,7 @@ public class ProdutoRepository(Func<IDbConnection> connectionFactory) : IProduto
                             vg.Armazenamento,
                             vg.MemoriaRam,
                         },
-                        transaction
+                        tx
                     );
                     break;
 
@@ -118,14 +133,14 @@ public class ProdutoRepository(Func<IDbConnection> connectionFactory) : IProduto
                             jogo.Desenvolvedor,
                             jogo.AnoLancamento,
                         },
-                        transaction
+                        tx
                     );
 
                     foreach (var plataforma in jogo.Plataformas)
                     {
                         var plataformaId = await ObterOuCriarPlataformaAsync(
                             connection,
-                            transaction,
+                            tx,
                             plataforma.Nome
                         );
 
@@ -134,7 +149,7 @@ public class ProdutoRepository(Func<IDbConnection> connectionFactory) : IProduto
                             INSERT OR IGNORE INTO JogoPlataforma (JogoId, PlataformaId)
                             VALUES (@JogoId, @PlataformaId);",
                             new { JogoId = novoId, PlataformaId = plataformaId },
-                            transaction
+                            tx
                         );
                     }
                     break;
@@ -151,20 +166,32 @@ public class ProdutoRepository(Func<IDbConnection> connectionFactory) : IProduto
                             acessorio.Modelo,
                             Tipo = acessorio.Tipo.ToString(),
                         },
-                        transaction
+                        tx
                     );
                     break;
 
                 default:
                     throw new DomainException(
-                        $"Tipo de produto nÃ£o suportado: {entidade.GetType().Name}"
+                        $"Tipo de produto não suportado: {entidade.GetType().Name}"
                     );
             }
 
+            if (ownsTransaction)
+                tx.Commit();
+
             return novoId;
+        }
+        catch
+        {
+            if (ownsTransaction)
+                tx.Rollback();
+            throw;
         }
         finally
         {
+            if (ownsTransaction)
+                tx.Dispose();
+
             if (ownsConnection)
                 connection.Dispose();
         }
@@ -178,11 +205,26 @@ public class ProdutoRepository(Func<IDbConnection> connectionFactory) : IProduto
     {
         ArgumentNullException.ThrowIfNull(entidade);
 
-        var ownsConnection = externalConnection is null;
-        var connection = externalConnection ?? _connectionFactory();
+        if (transaction is not null && transaction.Connection is null)
+            throw new ArgumentException("A transação não está associada a uma conexão.", nameof(transaction));
 
-        if (ownsConnection && connection.State != ConnectionState.Open)
+        if (
+            externalConnection is not null
+            && transaction is not null
+            && !ReferenceEquals(transaction.Connection, externalConnection)
+        )
+            throw new ArgumentException(
+                "A transação deve pertencer à conexão informada.",
+                nameof(transaction)
+            );
+
+        var ownsConnection = externalConnection is null && transaction is null;
+        var connection = externalConnection ?? transaction?.Connection ?? _connectionFactory();
+        if (connection.State != ConnectionState.Open)
             connection.Open();
+
+        var ownsTransaction = transaction is null;
+        var tx = transaction ?? connection.BeginTransaction();
 
         try
         {
@@ -190,26 +232,29 @@ public class ProdutoRepository(Func<IDbConnection> connectionFactory) : IProduto
                 @"
                 UPDATE Produtos
                    SET Nome = @Nome,
-                       Preco = @Preco,
-                       Quantidade = @Quantidade
+                       Preco = @Preco
                  WHERE Id = @Id;",
                 new
                 {
                     entidade.Id,
                     entidade.Nome,
                     entidade.Preco,
-                    entidade.Quantidade,
                 },
-                transaction
+                tx
             );
 
             if (linhasProduto == 0)
+            {
+                if (ownsTransaction)
+                    tx.Rollback();
                 return false;
+            }
 
             switch (entidade)
             {
                 case Videogame vg:
-                    await connection.ExecuteAsync(
+                {
+                    var linhasEspecificas = await connection.ExecuteAsync(
                         @"
                         UPDATE Videogames
                            SET Marca = @Marca,
@@ -225,12 +270,19 @@ public class ProdutoRepository(Func<IDbConnection> connectionFactory) : IProduto
                             vg.Armazenamento,
                             vg.MemoriaRam,
                         },
-                        transaction
+                        tx
                     );
+
+                    if (linhasEspecificas == 0)
+                        throw new DomainException(
+                            "As especificações do videogame não foram encontradas."
+                        );
                     break;
+                }
 
                 case Jogo jogo:
-                    await connection.ExecuteAsync(
+                {
+                    var linhasEspecificas = await connection.ExecuteAsync(
                         @"
                         UPDATE Jogos
                            SET Desenvolvedor = @Desenvolvedor,
@@ -242,20 +294,23 @@ public class ProdutoRepository(Func<IDbConnection> connectionFactory) : IProduto
                             jogo.Desenvolvedor,
                             jogo.AnoLancamento,
                         },
-                        transaction
+                        tx
                     );
+
+                    if (linhasEspecificas == 0)
+                        throw new DomainException("As especificações do jogo não foram encontradas.");
 
                     await connection.ExecuteAsync(
                         "DELETE FROM JogoPlataforma WHERE JogoId = @JogoId;",
                         new { JogoId = jogo.Id },
-                        transaction
+                        tx
                     );
 
                     foreach (var plataforma in jogo.Plataformas)
                     {
                         var plataformaId = await ObterOuCriarPlataformaAsync(
                             connection,
-                            transaction,
+                            tx,
                             plataforma.Nome
                         );
 
@@ -264,13 +319,15 @@ public class ProdutoRepository(Func<IDbConnection> connectionFactory) : IProduto
                             INSERT OR IGNORE INTO JogoPlataforma (JogoId, PlataformaId)
                             VALUES (@JogoId, @PlataformaId);",
                             new { JogoId = jogo.Id, PlataformaId = plataformaId },
-                            transaction
+                            tx
                         );
                     }
                     break;
+                }
 
                 case Acessorio acessorio:
-                    await connection.ExecuteAsync(
+                {
+                    var linhasEspecificas = await connection.ExecuteAsync(
                         @"
                         UPDATE Acessorios
                            SET Marca = @Marca,
@@ -284,15 +341,38 @@ public class ProdutoRepository(Func<IDbConnection> connectionFactory) : IProduto
                             acessorio.Modelo,
                             Tipo = acessorio.Tipo.ToString(),
                         },
-                        transaction
+                        tx
                     );
+
+                    if (linhasEspecificas == 0)
+                        throw new DomainException(
+                            "As especificações do acessório não foram encontradas."
+                        );
                     break;
+                }
+
+                default:
+                    throw new DomainException(
+                        $"Tipo de produto não suportado: {entidade.GetType().Name}"
+                    );
             }
+
+            if (ownsTransaction)
+                tx.Commit();
 
             return true;
         }
+        catch
+        {
+            if (ownsTransaction)
+                tx.Rollback();
+            throw;
+        }
         finally
         {
+            if (ownsTransaction)
+                tx.Dispose();
+
             if (ownsConnection)
                 connection.Dispose();
         }
@@ -307,45 +387,86 @@ public class ProdutoRepository(Func<IDbConnection> connectionFactory) : IProduto
         if (id <= 0)
             return false;
 
-        var ownsConnection = externalConnection is null;
-        var connection = externalConnection ?? _connectionFactory();
+        if (transaction is not null && transaction.Connection is null)
+            throw new ArgumentException("A transação não está associada a uma conexão.", nameof(transaction));
 
-        if (ownsConnection && connection.State != ConnectionState.Open)
+        if (
+            externalConnection is not null
+            && transaction is not null
+            && !ReferenceEquals(transaction.Connection, externalConnection)
+        )
+            throw new ArgumentException(
+                "A transação deve pertencer à conexão informada.",
+                nameof(transaction)
+            );
+
+        var ownsConnection = externalConnection is null && transaction is null;
+        var connection = externalConnection ?? transaction?.Connection ?? _connectionFactory();
+
+        if (connection.State != ConnectionState.Open)
             connection.Open();
+
+        var ownsTransaction = transaction is null;
+        var tx = transaction ?? connection.BeginTransaction();
 
         try
         {
             await connection.ExecuteAsync(
                 "DELETE FROM JogoPlataforma WHERE JogoId = @Id;",
                 new { Id = id },
-                transaction
+                tx
             );
             await connection.ExecuteAsync(
                 "DELETE FROM Videogames WHERE ProdutoId = @Id;",
                 new { Id = id },
-                transaction
+                tx
             );
             await connection.ExecuteAsync(
                 "DELETE FROM Jogos WHERE ProdutoId = @Id;",
                 new { Id = id },
-                transaction
+                tx
             );
             await connection.ExecuteAsync(
                 "DELETE FROM Acessorios WHERE ProdutoId = @Id;",
                 new { Id = id },
-                transaction
+                tx
             );
 
             var afetadas = await connection.ExecuteAsync(
                 "DELETE FROM Produtos WHERE Id = @Id;",
                 new { Id = id },
-                transaction
+                tx
             );
+
+            if (ownsTransaction)
+                tx.Commit();
 
             return afetadas > 0;
         }
+        catch (SqliteException ex) when (
+            ex.SqliteErrorCode == 19
+            && ex.Message.Contains("FOREIGN KEY constraint failed", StringComparison.OrdinalIgnoreCase)
+        )
+        {
+            if (ownsTransaction)
+                tx.Rollback();
+
+            throw new DomainException(
+                "Não é possível excluir um produto associado a vendas ou movimentações de estoque.",
+                ex
+            );
+        }
+        catch
+        {
+            if (ownsTransaction)
+                tx.Rollback();
+            throw;
+        }
         finally
         {
+            if (ownsTransaction)
+                tx.Dispose();
+
             if (ownsConnection)
                 connection.Dispose();
         }
@@ -370,7 +491,7 @@ public class ProdutoRepository(Func<IDbConnection> connectionFactory) : IProduto
         return afetadas > 0;
     }
 
-    private static async Task<Produto?> HidratarProdutoAsync(
+    private static async Task<Produto> HidratarProdutoAsync(
         IDbConnection connection,
         ProdutoBaseRow baseRow
     )
@@ -385,12 +506,14 @@ public class ProdutoRepository(Func<IDbConnection> connectionFactory) : IProduto
                 );
 
                 if (vgRow is null)
-                    return null;
+                    throw new DomainException(
+                        $"Especificações do videogame #{baseRow.Id} não encontradas no banco."
+                    );
 
                 return new Videogame(
                     baseRow.Id,
                     baseRow.Nome,
-                    baseRow.Preco,
+                    decimal.Parse(baseRow.Preco, CultureInfo.InvariantCulture),
                     baseRow.Quantidade,
                     vgRow.Marca,
                     vgRow.Modelo,
@@ -407,7 +530,9 @@ public class ProdutoRepository(Func<IDbConnection> connectionFactory) : IProduto
                 );
 
                 if (jogoRow is null)
-                    return null;
+                    throw new DomainException(
+                        $"Especificações do jogo #{baseRow.Id} não encontradas no banco."
+                    );
 
                 var plataformas = (
                     await connection.QueryAsync<PlataformaRow>(
@@ -424,7 +549,7 @@ public class ProdutoRepository(Func<IDbConnection> connectionFactory) : IProduto
                 return new Jogo(
                     baseRow.Id,
                     baseRow.Nome,
-                    baseRow.Preco,
+                    decimal.Parse(baseRow.Preco, CultureInfo.InvariantCulture),
                     baseRow.Quantidade,
                     jogoRow.Desenvolvedor,
                     jogoRow.AnoLancamento,
@@ -440,17 +565,19 @@ public class ProdutoRepository(Func<IDbConnection> connectionFactory) : IProduto
                 );
 
                 if (accRow is null)
-                    return null;
+                    throw new DomainException(
+                        $"Especificações do acessório #{baseRow.Id} não encontradas no banco."
+                    );
 
                 if (!Enum.TryParse<TipoAcessorio>(accRow.Tipo, ignoreCase: true, out var tipoEnum))
                     throw new DomainException(
-                        $"Tipo de acessÃ³rio desconhecido no banco: '{accRow.Tipo}'."
+                        $"Tipo de acessório desconhecido no banco: '{accRow.Tipo}'."
                     );
 
                 return new Acessorio(
                     baseRow.Id,
                     baseRow.Nome,
-                    baseRow.Preco,
+                    decimal.Parse(baseRow.Preco, CultureInfo.InvariantCulture),
                     baseRow.Quantidade,
                     accRow.Marca,
                     accRow.Modelo,
@@ -459,7 +586,9 @@ public class ProdutoRepository(Func<IDbConnection> connectionFactory) : IProduto
             }
 
             default:
-                return null;
+                throw new DomainException(
+                    $"Tipo de produto desconhecido no banco: '{baseRow.TipoProduto}'."
+                );
         }
     }
 
@@ -493,7 +622,7 @@ public class ProdutoRepository(Func<IDbConnection> connectionFactory) : IProduto
     {
         public int Id { get; set; }
         public string Nome { get; set; } = string.Empty;
-        public decimal Preco { get; set; }
+        public string Preco { get; set; } = "0";
         public int Quantidade { get; set; }
         public string TipoProduto { get; set; } = string.Empty;
     }

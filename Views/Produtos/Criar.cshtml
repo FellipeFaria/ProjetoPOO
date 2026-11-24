@@ -1,0 +1,158 @@
+@using ProjetoPOO.Models
+
+@{
+    ViewData["Title"] = "Novo Produto";
+}
+
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <h2>Novo Produto</h2>
+    <a asp-action="Index" class="btn btn-outline-secondary">Voltar ao Catálogo</a>
+</div>
+
+@if (TempData["Erro"] is string erro)
+{
+    <div class="alert alert-danger">@erro</div>
+}
+
+<div class="row g-4">
+    <div class="col-lg-4">
+        <div class="card h-100">
+            <div class="card-header fw-bold">Videogame</div>
+            <div class="card-body">
+                <form asp-action="CriarVideogame" method="post">
+                    @Html.AntiForgeryToken()
+
+                    <div class="mb-2">
+                        <label class="form-label">Nome</label>
+                        <input type="text" name="nome" class="form-control" placeholder="Ex.: PlayStation 5 Slim" required />
+                    </div>
+
+                    <div class="row g-2 mb-2">
+                        <div class="col-6">
+                            <label class="form-label">Preço</label>
+                            <input type="text" name="preco" inputmode="decimal" placeholder="0,00" class="form-control" required />
+                        </div>
+                        <div class="col-6">
+                            <label class="form-label">Estoque</label>
+                            <input type="number" name="quantidade" min="0" class="form-control" required />
+                        </div>
+                    </div>
+
+                    <div class="row g-2 mb-2">
+                        <div class="col-6">
+                            <label class="form-label">Marca</label>
+                            <input type="text" name="marca" class="form-control" placeholder="Sony" required />
+                        </div>
+                        <div class="col-6">
+                            <label class="form-label">Modelo</label>
+                            <input type="text" name="modelo" class="form-control" placeholder="CFI-2000" required />
+                        </div>
+                    </div>
+
+                    <div class="row g-2 mb-3">
+                        <div class="col-6">
+                            <label class="form-label">Armazenamento (GB)</label>
+                            <input type="number" name="armazenamento" min="1" class="form-control" placeholder="1024" required />
+                        </div>
+                        <div class="col-6">
+                            <label class="form-label">Memória RAM (GB)</label>
+                            <input type="number" name="memoriaRam" min="1" class="form-control" placeholder="16" required />
+                        </div>
+                    </div>
+
+                    <button type="submit" class="btn btn-primary w-100">Cadastrar Videogame</button>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-lg-4">
+        <div class="card h-100">
+            <div class="card-header fw-bold">Jogo</div>
+            <div class="card-body">
+                <form asp-action="CriarJogo" method="post">
+                    @Html.AntiForgeryToken()
+
+                    <div class="mb-2">
+                        <label class="form-label">Nome</label>
+                        <input type="text" name="nome" class="form-control" placeholder="Ex.: Elden Ring" required />
+                    </div>
+
+                    <div class="row g-2 mb-2">
+                        <div class="col-6">
+                            <label class="form-label">Preço</label>
+                            <input type="text" name="preco" inputmode="decimal" placeholder="0,00" class="form-control" required />
+                        </div>
+                        <div class="col-6">
+                            <label class="form-label">Estoque</label>
+                            <input type="number" name="quantidade" min="0" class="form-control" required />
+                        </div>
+                    </div>
+
+                    <div class="row g-2 mb-2">
+                        <div class="col-7">
+                            <label class="form-label">Desenvolvedor</label>
+                            <input type="text" name="desenvolvedor" class="form-control" placeholder="FromSoftware" required />
+                        </div>
+                        <div class="col-5">
+                            <label class="form-label">Ano</label>
+                            <input type="number" name="anoLancamento" min="1970" max="2100" class="form-control" placeholder="2022" required />
+                        </div>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label">Plataformas (separadas por vírgula)</label>
+                        <input type="text" name="plataformasCsv" class="form-control" placeholder="PC, PS5, Xbox Series" />
+                    </div>
+
+                    <button type="submit" class="btn btn-primary w-100">Cadastrar Jogo</button>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-lg-4">
+        <div class="card h-100">
+            <div class="card-header fw-bold">Acessório</div>
+            <div class="card-body">
+                <form asp-action="CriarAcessorio" method="post">
+                    @Html.AntiForgeryToken()
+
+                    <div class="mb-2">
+                        <label class="form-label">Nome</label>
+                        <input type="text" name="nome" class="form-control" placeholder="Ex.: DualSense Edge" required />
+                    </div>
+
+                    <div class="row g-2 mb-2">
+                        <div class="col-6">
+                            <label class="form-label">Preço</label>
+                            <input type="text" name="preco" inputmode="decimal" placeholder="0,00" class="form-control" required />
+                        </div>
+                        <div class="col-6">
+                            <label class="form-label">Estoque</label>
+                            <input type="number" name="quantidade" min="0" class="form-control" required />
+                        </div>
+                    </div>
+
+                    <div class="mb-2">
+                        <label class="form-label">Tipo de Acessório</label>
+                        <select name="tipo" asp-items="Html.GetEnumSelectList<TipoAcessorio>()" class="form-select"></select>
+                    </div>
+
+                    <div class="row g-2 mb-3">
+                        <div class="col-6">
+                            <label class="form-label">Marca</label>
+                            <input type="text" name="marca" class="form-control" placeholder="Sony" required />
+                        </div>
+                        <div class="col-6">
+                            <label class="form-label">Modelo</label>
+                            <input type="text" name="modelo" class="form-control" placeholder="CFI-ZCP1" required />
+                        </div>
+                    </div>
+
+                    <button type="submit" class="btn btn-primary w-100">Cadastrar Acessório</button>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>

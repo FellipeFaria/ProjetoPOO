@@ -1,0 +1,94 @@
+@using ProjetoPOO.Models
+@model IEnumerable<Venda>
+
+@{
+    ViewData["Title"] = "Vendas";
+    var clientes = ViewBag.Clientes as IEnumerable<Cliente> ?? Enumerable.Empty<Cliente>();
+    var produtos = ViewBag.Produtos as IEnumerable<Produto> ?? Enumerable.Empty<Produto>();
+    var clientesPorId = clientes.ToDictionary(cliente => cliente.Id);
+    var produtosPorId = produtos.ToDictionary(produto => produto.Id);
+    var totalConcluido = Model.Where(venda => venda.Status == StatusVenda.CONCLUIDA)
+        .Sum(venda => venda.ValorTotal);
+}
+
+<h2>Vendas</h2>
+<p class="text-muted">Total em vendas concluídas: <strong>@totalConcluido.ToString("C")</strong></p>
+
+@if (TempData["Sucesso"] is string sucesso)
+{
+    <div class="alert alert-success">@sucesso</div>
+}
+@if (TempData["Erro"] is string erro)
+{
+    <div class="alert alert-danger">@erro</div>
+}
+
+<form asp-action="Criar" method="post" class="row g-2 mb-4">
+    @Html.AntiForgeryToken()
+    <div class="col-md-3">
+        <select name="clienteId" class="form-select" required>
+            <option value="">Selecione o cliente...</option>
+            @foreach (var c in clientes)
+            {
+                <option value="@c.Id">@c.Nome</option>
+            }
+        </select>
+    </div>
+    <div class="col-md-4">
+        <select name="produtoId" class="form-select" required>
+            <option value="">Selecione o produto...</option>
+            @foreach (var p in produtos)
+            {
+                <option value="@p.Id">@p.Nome — @p.Preco.ToString("C") (Est: @p.Quantidade)</option>
+            }
+        </select>
+    </div>
+    <div class="col-md-2">
+        <input type="number" name="quantidade" min="1" class="form-control" placeholder="Qtd" required />
+    </div>
+    <div class="col-md-2">
+        <select name="formaPagamento" asp-items="Html.GetEnumSelectList<FormaPagamento>()" class="form-select"></select>
+    </div>
+    <div class="col-md-1 d-grid">
+        <button type="submit" class="btn btn-success">Vender</button>
+    </div>
+</form>
+
+<table class="table table-bordered">
+    <thead>
+        <tr>
+            <th>Venda</th>
+            <th>Data/Hora</th>
+            <th>Cliente</th>
+            <th>Pagamento</th>
+            <th>Status</th>
+            <th>Itens</th>
+            <th>Total</th>
+        </tr>
+    </thead>
+    <tbody>
+        @foreach (var venda in Model)
+        {
+            <tr>
+                <td>#@venda.Id</td>
+                <td>@venda.DataHora.ToString("dd/MM/yyyy HH:mm")</td>
+                <td>@(clientesPorId.TryGetValue(venda.ClienteId, out var cliente) ? cliente.Nome : $"#{venda.ClienteId}")</td>
+                <td>@venda.FormaPagamento</td>
+                <td>@venda.Status</td>
+                <td>
+                    <ul class="list-unstyled mb-0">
+                        @foreach (var item in venda.Itens)
+                        {
+                            <li>@(produtosPorId.TryGetValue(item.ProdutoId, out var produto) ? produto.Nome : $"#{item.ProdutoId}") × @item.Quantidade</li>
+                        }
+                    </ul>
+                </td>
+                <td><strong>@venda.ValorTotal.ToString("C")</strong></td>
+            </tr>
+        }
+        @if (!Model.Any())
+        {
+            <tr><td colspan="7" class="text-center text-muted">Nenhuma venda registrada.</td></tr>
+        }
+    </tbody>
+</table>

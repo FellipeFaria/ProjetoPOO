@@ -1,0 +1,39 @@
+@model ProjetoPOO.Models.Cliente
+
+@{
+    ViewData["Title"] = "Editar Cliente";
+}
+
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <h2>Editar Cliente</h2>
+    <a asp-action="Index" class="btn btn-outline-secondary">Voltar à lista</a>
+</div>
+
+@if (TempData["Erro"] is string erro)
+{
+    <div class="alert alert-danger">@erro</div>
+}
+
+<form asp-action="Editar" asp-route-id="@Model.Id" method="post" class="row g-3">
+    @Html.AntiForgeryToken()
+    <div class="col-md-6">
+        <label for="nome" class="form-label">Nome</label>
+        <input id="nome" type="text" name="nome" value="@Model.Nome" class="form-control" required />
+    </div>
+    <div class="col-md-6">
+        <label for="cpf" class="form-label">CPF</label>
+        <input id="cpf" type="text" name="cpf" value="@Model.Cpf" class="form-control" />
+    </div>
+    <div class="col-md-6">
+        <label for="email" class="form-label">E-mail</label>
+        <input id="email" type="email" name="email" value="@Model.Email" class="form-control" />
+    </div>
+    <div class="col-md-6">
+        <label for="telefone" class="form-label">Telefone</label>
+        <input id="telefone" type="text" name="telefone" value="@Model.Telefone" class="form-control" />
+    </div>
+    <div class="col-12">
+        <button type="submit" class="btn btn-primary">Salvar alterações</button>
+        <a asp-action="Index" class="btn btn-outline-secondary">Cancelar</a>
+    </div>
+</form>

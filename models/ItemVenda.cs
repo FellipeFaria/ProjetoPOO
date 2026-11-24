@@ -43,6 +43,9 @@ public class ItemVenda
         if (quantidadeAdicional <= 0)
             throw new DomainException("A quantidade adicional deve ser maior que zero.");
 
+        if (quantidadeAdicional > int.MaxValue - Quantidade)
+            throw new DomainException("A quantidade total do item excede o limite permitido.");
+
         Quantidade += quantidadeAdicional;
     }
 }

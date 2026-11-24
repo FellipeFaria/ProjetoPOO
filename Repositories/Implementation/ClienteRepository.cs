@@ -1,5 +1,7 @@
 using System.Data;
 using Dapper;
+using Microsoft.Data.Sqlite;
+using ProjetoPOO.Exceptions;
 using ProjetoPOO.Models;
 using ProjetoPOO.Repositories.Interfaces;
 
@@ -62,10 +64,11 @@ public class ClienteRepository(Func<IDbConnection> connectionFactory) : ICliente
     {
         ArgumentNullException.ThrowIfNull(entidade);
 
-        var ownsConnection = externalConnection is null;
-        var connection = externalConnection ?? _connectionFactory();
+        ValidarConexaoTransacao(externalConnection, transaction);
+        var ownsConnection = externalConnection is null && transaction is null;
+        var connection = externalConnection ?? transaction?.Connection ?? _connectionFactory();
 
-        if (ownsConnection && connection.State != ConnectionState.Open)
+        if (connection.State != ConnectionState.Open)
             connection.Open();
 
         try
@@ -88,6 +91,13 @@ public class ClienteRepository(Func<IDbConnection> connectionFactory) : ICliente
                 transaction
             );
         }
+        catch (SqliteException ex) when (
+            ex.SqliteExtendedErrorCode == 2067
+            && ex.Message.Contains("Clientes.CPF", StringComparison.OrdinalIgnoreCase)
+        )
+        {
+            throw new DomainException("Já existe um cliente cadastrado com este CPF.", ex);
+        }
         finally
         {
             if (ownsConnection)
@@ -103,10 +113,11 @@ public class ClienteRepository(Func<IDbConnection> connectionFactory) : ICliente
     {
         ArgumentNullException.ThrowIfNull(entidade);
 
-        var ownsConnection = externalConnection is null;
-        var connection = externalConnection ?? _connectionFactory();
+        ValidarConexaoTransacao(externalConnection, transaction);
+        var ownsConnection = externalConnection is null && transaction is null;
+        var connection = externalConnection ?? transaction?.Connection ?? _connectionFactory();
 
-        if (ownsConnection && connection.State != ConnectionState.Open)
+        if (connection.State != ConnectionState.Open)
             connection.Open();
 
         try
@@ -132,6 +143,13 @@ public class ClienteRepository(Func<IDbConnection> connectionFactory) : ICliente
 
             return afetadas > 0;
         }
+        catch (SqliteException ex) when (
+            ex.SqliteExtendedErrorCode == 2067
+            && ex.Message.Contains("Clientes.CPF", StringComparison.OrdinalIgnoreCase)
+        )
+        {
+            throw new DomainException("Já existe um cliente cadastrado com este CPF.", ex);
+        }
         finally
         {
             if (ownsConnection)
@@ -148,10 +166,11 @@ public class ClienteRepository(Func<IDbConnection> connectionFactory) : ICliente
         if (id <= 0)
             return false;
 
-        var ownsConnection = externalConnection is null;
-        var connection = externalConnection ?? _connectionFactory();
+        ValidarConexaoTransacao(externalConnection, transaction);
+        var ownsConnection = externalConnection is null && transaction is null;
+        var connection = externalConnection ?? transaction?.Connection ?? _connectionFactory();
 
-        if (ownsConnection && connection.State != ConnectionState.Open)
+        if (connection.State != ConnectionState.Open)
             connection.Open();
 
         try
@@ -174,6 +193,25 @@ public class ClienteRepository(Func<IDbConnection> connectionFactory) : ICliente
     private static Cliente MapearParaDominio(ClienteRow row)
     {
         return new Cliente(row.Id, row.Nome, row.CPF, row.Email, row.Telefone);
+    }
+
+    private static void ValidarConexaoTransacao(
+        IDbConnection? externalConnection,
+        IDbTransaction? transaction
+    )
+    {
+        if (transaction is not null && transaction.Connection is null)
+            throw new ArgumentException("A transação não está associada a uma conexão.", nameof(transaction));
+
+        if (
+            externalConnection is not null
+            && transaction is not null
+            && !ReferenceEquals(transaction.Connection, externalConnection)
+        )
+            throw new ArgumentException(
+                "A transação deve pertencer à conexão informada.",
+                nameof(transaction)
+            );
     }
 
     private sealed class ClienteRow
