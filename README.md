@@ -1,6 +1,18 @@
 # GameStore
 
-O GameStore é uma aplicação web para gerenciamento de uma loja especializada em videogames, jogos e acessórios. O sistema organiza o catálogo, acompanha as quantidades em estoque, mantém os dados de clientes e registra vendas. O projeto também demonstra conceitos de Programação Orientada a Objetos e persistência de dados em banco relacional.
+## Problema resolvido
+
+Uma loja especializada em videogames, jogos e acessórios precisa administrar informações com características diferentes em um único negócio. Videogames possuem marca, modelo, armazenamento e memória RAM; jogos possuem desenvolvedor, ano de lançamento e plataformas; acessórios possuem marca, modelo e tipo. Ao mesmo tempo, o estoque, os clientes e as vendas precisam permanecer coerentes entre si.
+
+Sem um sistema centralizado, essas informações podem ficar dispersas em registros independentes ou planilhas. Nesse cenário, são comuns erros como cadastrar o mesmo produto com dados inconsistentes, vender uma quantidade maior que a disponível, não registrar a saída do estoque, manter o histórico de movimentação incompleto e perder o vínculo entre venda, cliente e produtos comercializados.
+
+O GameStore resolve esse problema propondo uma aplicação web única para o cadastro e a consulta do catálogo, o controle das entradas e saídas de estoque, a gestão dos dados de clientes e o registro das vendas concluídas. A implementação usa regras no domínio para impedir operações inválidas, como preço negativo, quantidade não positiva ou venda sem estoque suficiente. As informações são persistidas em SQLite e o histórico permite acompanhar que o estoque foi alterado por uma movimentação manual ou por uma venda.
+
+## Proposta de valor
+
+O GameStore organiza o processo da loja em um fluxo integrado: o catálogo é cadastrado por tipo de produto; o estoque acompanha a disponibilidade; o cliente é vinculado à venda; e cada venda registra os itens, o preço unitário, o pagamento e o valor total. Quando uma venda é registrada, o sistema baixa o estoque e cria as movimentações correspondentes, evitando que o cadastro comercial e o estoque sejam atualizados separadamente.
+
+Além da aplicação prática, o projeto demonstra como os conceitos de Programação Orientada a Objetos podem estruturar um problema real: abstração e herança representam as categorias de produtos, encapsulamento protege o estado e as regras de negócio, polimorfismo permite tratar os produtos de forma uniforme e enums padronizam tipos, pagamentos e status.
 
 ## Integrantes
 
@@ -11,10 +23,12 @@ O GameStore é uma aplicação web para gerenciamento de uma loja especializada 
 
 ## Funcionalidades
 
+O sistema cobre as principais etapas da operação da loja:
+
 - **Produtos:** cadastro de videogames, jogos e acessórios; listagem do catálogo com especificações, estoque e preço; edição e exclusão.
 - **Clientes:** cadastro, listagem e edição de nome, CPF, e-mail e telefone.
 - **Estoque:** registro e consulta de movimentações de entrada e saída. As quantidades são atualizadas pelas movimentações e pelas vendas.
-- **Vendas:** registro de venda para um cliente, com produto, quantidade e forma de pagamento; consulta do histórico, dos itens, do status e do total de vendas concluídas.
+- **Vendas:** seleção de cliente e produto, definição da quantidade e da forma de pagamento; consulta do histórico, dos itens, do status e do total de vendas concluídas.
 - **Validações de domínio:** regras para dados e operações, incluindo preço e quantidade não negativos, quantidade de movimentação positiva e verificação de estoque disponível para venda.
 
 ## Conceitos de POO no domínio
