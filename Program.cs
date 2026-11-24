@@ -1,5 +1,7 @@
 using System.Data;
+using System.Globalization;
 using Dapper;
+using Microsoft.AspNetCore.Localization;
 using Microsoft.Data.Sqlite;
 using ProjetoPOO.Database;
 using ProjetoPOO.Repositories.Implementation;
@@ -12,10 +14,10 @@ builder.Services.AddControllersWithViews();
 var connectionString =
     builder.Configuration.GetConnectionString("DefaultConnection")
     ?? throw new InvalidOperationException(
-        "Connection string 'DefaultConnection' nÃ£o configurada."
+        "Connection string 'DefaultConnection' não configurada."
     );
 
-var scriptPath = Path.Combine(builder.Environment.ContentRootPath, "Database", "script.sql");
+var scriptPath = Path.Combine(builder.Environment.ContentRootPath, "Database", "Script.sql");
 
 builder.Services.AddTransient<Func<IDbConnection>>(serviceProvider =>
 {
@@ -29,7 +31,6 @@ builder.Services.AddTransient<Func<IDbConnection>>(serviceProvider =>
 });
 
 builder.Services.AddScoped<IProdutoRepository, ProdutoRepository>();
-builder.Services.AddScoped<IProdutoRepository, ProdutoRepository>();
 builder.Services.AddScoped<IClienteRepository, ClienteRepository>();
 builder.Services.AddScoped<IMovimentacaoRepository, MovimentacaoRepository>();
 builder.Services.AddScoped<IVendaRepository, VendaRepository>();
@@ -38,6 +39,16 @@ var app = builder.Build();
 
 var dbInitializer = new DbInitializer(connectionString, scriptPath);
 dbInitializer.Initialize();
+
+var supportedCultures = new[] { new CultureInfo("pt-BR") };
+app.UseRequestLocalization(
+    new RequestLocalizationOptions
+    {
+        DefaultRequestCulture = new RequestCulture("pt-BR"),
+        SupportedCultures = supportedCultures,
+        SupportedUICultures = supportedCultures,
+    }
+);
 
 // Configure the HTTP request pipeline.
 if (!app.Environment.IsDevelopment())
@@ -52,6 +63,6 @@ app.UseStaticFiles();
 app.UseRouting();
 app.UseAuthorization();
 
-app.MapControllerRoute(name: "default", pattern: "{controller=Home}/{action=Index}/{id?}");
+app.MapControllerRoute(name: "default", pattern: "{controller=Produtos}/{action=Index}/{id?}");
 
 app.Run();

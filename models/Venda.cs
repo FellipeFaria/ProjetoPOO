@@ -71,7 +71,11 @@ public class Venda
             throw new DomainException("A quantidade deve ser maior que zero.");
 
         var itemExistente = _itens.FirstOrDefault(i => i.ProdutoId == produto.Id);
-        var quantidadeTotalSolicitada = (itemExistente?.Quantidade ?? 0) + quantidade;
+        var quantidadeExistente = itemExistente?.Quantidade ?? 0;
+        if (quantidade > int.MaxValue - quantidadeExistente)
+            throw new DomainException("A quantidade total do item excede o limite permitido.");
+
+        var quantidadeTotalSolicitada = quantidadeExistente + quantidade;
 
         if (quantidadeTotalSolicitada > produto.Quantidade)
             throw new DomainException(

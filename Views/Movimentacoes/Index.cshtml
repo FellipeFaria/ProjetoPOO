@@ -1,0 +1,74 @@
+@using ProjetoPOO.Models
+@model IEnumerable<Movimentacao>
+
+@{
+    ViewData["Title"] = "Movimentações de Estoque";
+    var produtos = ViewBag.Produtos as IEnumerable<Produto> ?? Enumerable.Empty<Produto>();
+    var produtosPorId = produtos.ToDictionary(produto => produto.Id);
+}
+
+<h2>Movimentações de Estoque</h2>
+
+@if (TempData["Sucesso"] is string sucesso)
+{
+    <div class="alert alert-success">@sucesso</div>
+}
+@if (TempData["Erro"] is string erro)
+{
+    <div class="alert alert-danger">@erro</div>
+}
+
+<form asp-action="Registrar" method="post" class="row g-2 mb-4">
+    @Html.AntiForgeryToken()
+    <div class="col-md-4">
+        <select name="produtoId" class="form-select" required>
+            <option value="">Selecione um produto...</option>
+            @foreach (var p in produtos)
+            {
+                <option value="@p.Id">@p.Nome (Estoque: @p.Quantidade)</option>
+            }
+        </select>
+    </div>
+    <div class="col-md-2">
+        <select name="tipo" asp-items="Html.GetEnumSelectList<TipoMovimentacao>()" class="form-select"></select>
+    </div>
+    <div class="col-md-2">
+        <input type="number" name="quantidade" min="1" class="form-control" placeholder="Qtd" required />
+    </div>
+    <div class="col-md-3">
+        <input type="text" name="motivo" class="form-control" placeholder="Motivo (ex.: Reposição)" />
+    </div>
+    <div class="col-md-1 d-grid">
+        <button type="submit" class="btn btn-primary">Registrar</button>
+    </div>
+</form>
+
+<table class="table table-striped">
+    <thead>
+        <tr>
+            <th>Data/Hora</th>
+            <th>Produto</th>
+            <th>Tipo</th>
+            <th>Quantidade</th>
+            <th>VendaId</th>
+            <th>Motivo</th>
+        </tr>
+    </thead>
+    <tbody>
+        @foreach (var mov in Model)
+        {
+            <tr>
+                <td>@mov.DataHora.ToString("dd/MM/yyyy HH:mm")</td>
+                <td>@(produtosPorId.TryGetValue(mov.ProdutoId, out var produto) ? produto.Nome : $"#{mov.ProdutoId}")</td>
+                <td>@mov.Tipo</td>
+                <td>@mov.Quantidade</td>
+                <td>@(mov.VendaId.HasValue ? $"#{mov.VendaId}" : "-")</td>
+                <td>@(mov.Motivo ?? "-")</td>
+            </tr>
+        }
+        @if (!Model.Any())
+        {
+            <tr><td colspan="6" class="text-center text-muted">Nenhuma movimentação registrada.</td></tr>
+        }
+    </tbody>
+</table>

@@ -1,4 +1,5 @@
 using System.Data;
+using System.Globalization;
 using Dapper;
 using ProjetoPOO.Exceptions;
 using ProjetoPOO.Models;
@@ -60,7 +61,7 @@ public class VendaRepository(Func<IDbConnection> connectionFactory) : IVendaRepo
         return MapearVendaParaDominio(vRow, itens);
     }
 
-    public Task<int> AdicionarAsync(
+    public async Task<int> AdicionarAsync(
         Venda entidade,
         IDbConnection? externalConnection = null,
         IDbTransaction? transaction = null
@@ -68,74 +69,63 @@ public class VendaRepository(Func<IDbConnection> connectionFactory) : IVendaRepo
     {
         ArgumentNullException.ThrowIfNull(entidade);
 
-        if (externalConnection is not null && transaction is not null)
-            return InserirVendaEItensAsync(entidade, externalConnection, transaction);
+        if (externalConnection is null && transaction is null)
+            return await RegistrarVendaCompletaAsync(entidade);
 
-        return RegistrarVendaCompletaAsync(entidade);
+        if (transaction is not null && transaction.Connection is null)
+            throw new ArgumentException("A transação não está associada a uma conexão.", nameof(transaction));
+
+        if (
+            externalConnection is not null
+            && transaction is not null
+            && !ReferenceEquals(transaction.Connection, externalConnection)
+        )
+            throw new ArgumentException(
+                "A transação deve pertencer à conexão informada.",
+                nameof(transaction)
+            );
+
+        var connection = externalConnection ?? transaction?.Connection ?? _connectionFactory();
+        if (connection.State != ConnectionState.Open)
+            connection.Open();
+
+        var ownsTransaction = transaction is null;
+        var tx = transaction ?? connection.BeginTransaction();
+
+        try
+        {
+            var vendaId = await RegistrarVendaNaTransacaoAsync(entidade, connection, tx);
+            if (ownsTransaction)
+                tx.Commit();
+
+            return vendaId;
+        }
+        catch
+        {
+            if (ownsTransaction)
+                tx.Rollback();
+            throw;
+        }
+        finally
+        {
+            if (ownsTransaction)
+                tx.Dispose();
+        }
     }
 
     public async Task<int> RegistrarVendaCompletaAsync(Venda venda)
     {
         ArgumentNullException.ThrowIfNull(venda);
 
-        if (venda.Itens.Count == 0)
-            throw new DomainException("Não é possível registrar uma venda sem itens.");
-
         using var connection = _connectionFactory();
-        connection.Open();
+        if (connection.State != ConnectionState.Open)
+            connection.Open();
 
         using var transaction = connection.BeginTransaction();
 
         try
         {
-            var vendaId = await InserirVendaEItensAsync(venda, connection, transaction);
-
-            if (venda.Status == StatusVenda.CONCLUIDA)
-            {
-                foreach (var item in venda.Itens)
-                {
-                    var estoqueAtual = await connection.ExecuteScalarAsync<int?>(
-                        "SELECT Quantidade FROM Produtos WHERE Id = @ProdutoId;",
-                        new { item.ProdutoId },
-                        transaction
-                    );
-
-                    if (!estoqueAtual.HasValue)
-                        throw new DomainException(
-                            $"Produto #{item.ProdutoId} não encontrado no estoque."
-                        );
-
-                    if (estoqueAtual.Value < item.Quantidade)
-                        throw new DomainException(
-                            $"Estoque insuficiente para o produto #{item.ProdutoId}. Disponível: {estoqueAtual.Value}, solicitado: {item.Quantidade}."
-                        );
-
-                    await connection.ExecuteAsync(
-                        @"
-                        UPDATE Produtos
-                           SET Quantidade = Quantidade - @Quantidade
-                         WHERE Id = @ProdutoId;",
-                        new { item.Quantidade, item.ProdutoId },
-                        transaction
-                    );
-
-                    await connection.ExecuteAsync(
-                        @"
-                        INSERT INTO Movimentacoes (ProdutoId, VendaId, Quantidade, Tipo, Motivo, DataHora)
-                        VALUES (@ProdutoId, @VendaId, @Quantidade, @Tipo, @Motivo, @DataHora);",
-                        new
-                        {
-                            item.ProdutoId,
-                            VendaId = vendaId,
-                            item.Quantidade,
-                            Tipo = TipoMovimentacao.SAIDA.ToString(),
-                            Motivo = $"Venda #{vendaId}",
-                            DataHora = venda.DataHora.ToString("yyyy-MM-dd HH:mm:ss"),
-                        },
-                        transaction
-                    );
-                }
-            }
+            var vendaId = await RegistrarVendaNaTransacaoAsync(venda, connection, transaction);
 
             transaction.Commit();
             return vendaId;
@@ -147,6 +137,38 @@ public class VendaRepository(Func<IDbConnection> connectionFactory) : IVendaRepo
         }
     }
 
+    private static async Task<int> RegistrarVendaNaTransacaoAsync(
+        Venda venda,
+        IDbConnection connection,
+        IDbTransaction transaction
+    )
+    {
+        if (venda.Itens.Count == 0)
+            throw new DomainException("Não é possível registrar uma venda sem itens.");
+
+        if (venda.Status == StatusVenda.CANCELADA)
+            throw new DomainException("Uma venda não pode ser cadastrada já cancelada.");
+
+        var vendaId = await InserirVendaEItensAsync(venda, connection, transaction);
+
+        if (venda.Status == StatusVenda.CONCLUIDA)
+        {
+            foreach (var item in venda.Itens)
+            {
+                await AplicarMovimentacaoDeVendaAsync(
+                    connection,
+                    transaction,
+                    vendaId,
+                    item,
+                    TipoMovimentacao.SAIDA,
+                    venda.DataHora
+                );
+            }
+        }
+
+        return vendaId;
+    }
+
     public async Task<bool> AtualizarAsync(
         Venda entidade,
         IDbConnection? externalConnection = null,
@@ -155,14 +177,30 @@ public class VendaRepository(Func<IDbConnection> connectionFactory) : IVendaRepo
     {
         ArgumentNullException.ThrowIfNull(entidade);
 
-        var ownsConnection = externalConnection is null;
-        var connection = externalConnection ?? _connectionFactory();
-        var ownsTransaction = ownsConnection && transaction is null;
+        if (entidade.Status != StatusVenda.ABERTA)
+            throw new DomainException("Somente vendas abertas podem ser alteradas.");
 
-        if (ownsConnection && connection.State != ConnectionState.Open)
+        if (transaction is not null && transaction.Connection is null)
+            throw new ArgumentException("A transação não está associada a uma conexão.", nameof(transaction));
+
+        if (
+            externalConnection is not null
+            && transaction is not null
+            && !ReferenceEquals(transaction.Connection, externalConnection)
+        )
+            throw new ArgumentException(
+                "A transação deve pertencer à conexão informada.",
+                nameof(transaction)
+            );
+
+        var ownsConnection = externalConnection is null && transaction is null;
+        var connection = externalConnection ?? transaction?.Connection ?? _connectionFactory();
+
+        if (connection.State != ConnectionState.Open)
             connection.Open();
 
-        var tx = transaction ?? (ownsTransaction ? connection.BeginTransaction() : null);
+        var ownsTransaction = transaction is null;
+        var tx = transaction ?? connection.BeginTransaction();
 
         try
         {
@@ -173,21 +211,23 @@ public class VendaRepository(Func<IDbConnection> connectionFactory) : IVendaRepo
                        DataHora = @DataHora,
                        FormaPagamento = @FormaPagamento,
                        Status = @Status
-                 WHERE Id = @Id;",
+                 WHERE Id = @Id
+                   AND Status = 'Aberta';",
                 new
                 {
                     entidade.Id,
                     entidade.ClienteId,
-                    DataHora = entidade.DataHora.ToString("yyyy-MM-dd HH:mm:ss"),
-                    FormaPagamento = entidade.FormaPagamento.ToString(),
-                    Status = entidade.Status.ToString(),
+                    DataHora = FormatarDataHora(entidade.DataHora),
+                    FormaPagamento = FormaPagamentoParaBanco(entidade.FormaPagamento),
+                    Status = StatusVendaParaBanco(entidade.Status),
                 },
                 tx
             );
 
             if (afetadas == 0)
             {
-                tx?.Rollback();
+                if (ownsTransaction)
+                    tx.Rollback();
                 return false;
             }
 
@@ -215,20 +255,20 @@ public class VendaRepository(Func<IDbConnection> connectionFactory) : IVendaRepo
             }
 
             if (ownsTransaction)
-                tx?.Commit();
+                tx.Commit();
 
             return true;
         }
         catch
         {
             if (ownsTransaction)
-                tx?.Rollback();
+                tx.Rollback();
             throw;
         }
         finally
         {
             if (ownsTransaction)
-                tx?.Dispose();
+                tx.Dispose();
 
             if (ownsConnection)
                 connection.Dispose();
@@ -240,18 +280,95 @@ public class VendaRepository(Func<IDbConnection> connectionFactory) : IVendaRepo
         if (vendaId <= 0)
             return false;
 
+        if (!Enum.IsDefined(novoStatus))
+            throw new DomainException("Status de venda inválido.");
+
         using var connection = _connectionFactory();
-        connection.Open();
+        if (connection.State != ConnectionState.Open)
+            connection.Open();
 
-        var afetadas = await connection.ExecuteAsync(
-            @"
-            UPDATE Vendas
-               SET Status = @Status
-             WHERE Id = @Id;",
-            new { Id = vendaId, Status = novoStatus.ToString() }
-        );
+        using var transaction = connection.BeginTransaction();
 
-        return afetadas > 0;
+        try
+        {
+            var statusAtualTexto = await connection.QueryFirstOrDefaultAsync<string>(
+                "SELECT Status FROM Vendas WHERE Id = @Id;",
+                new { Id = vendaId },
+                transaction
+            );
+
+            if (statusAtualTexto is null)
+                return false;
+
+            var statusAtual = StatusVendaDoBanco(statusAtualTexto);
+            if (statusAtual == novoStatus)
+                return true;
+
+            var deveConcluir = statusAtual == StatusVenda.ABERTA
+                && novoStatus == StatusVenda.CONCLUIDA;
+            var deveCancelarVendaConcluida = statusAtual == StatusVenda.CONCLUIDA
+                && novoStatus == StatusVenda.CANCELADA;
+            var deveCancelarVendaAberta = statusAtual == StatusVenda.ABERTA
+                && novoStatus == StatusVenda.CANCELADA;
+
+            if (!deveConcluir && !deveCancelarVendaConcluida && !deveCancelarVendaAberta)
+                throw new DomainException(
+                    $"Não é permitido alterar uma venda de '{statusAtual}' para '{novoStatus}'."
+                );
+
+            if (deveConcluir || deveCancelarVendaConcluida)
+            {
+                var itens = await CarregarItensDaVendaAsync(connection, vendaId, transaction);
+                if (itens.Count == 0)
+                    throw new DomainException(
+                        "Não é possível concluir ou estornar uma venda sem itens."
+                    );
+
+                var tipo = deveConcluir
+                    ? TipoMovimentacao.SAIDA
+                    : TipoMovimentacao.ENTRADA;
+                var dataHora = DateTime.Now;
+
+                foreach (var item in itens)
+                {
+                    await AplicarMovimentacaoDeVendaAsync(
+                        connection,
+                        transaction,
+                        vendaId,
+                        item,
+                        tipo,
+                        dataHora
+                    );
+                }
+            }
+
+            var afetadas = await connection.ExecuteAsync(
+                """
+                UPDATE Vendas
+                   SET Status = @NovoStatus
+                 WHERE Id = @Id
+                   AND Status = @StatusAtual;
+                """,
+                new
+                {
+                    Id = vendaId,
+                    NovoStatus = StatusVendaParaBanco(novoStatus),
+                    StatusAtual = StatusVendaParaBanco(statusAtual),
+                },
+                transaction
+            );
+
+            if (afetadas == 0)
+                throw new DomainException("A venda foi alterada por outra operação.");
+
+            transaction.Commit();
+            return true;
+        }
+        catch
+        {
+            transaction.Rollback();
+            throw;
+        }
     }
 
     public async Task<bool> RemoverAsync(
@@ -263,44 +380,73 @@ public class VendaRepository(Func<IDbConnection> connectionFactory) : IVendaRepo
         if (id <= 0)
             return false;
 
-        var ownsConnection = externalConnection is null;
-        var connection = externalConnection ?? _connectionFactory();
-        var ownsTransaction = ownsConnection && transaction is null;
+        if (transaction is not null && transaction.Connection is null)
+            throw new ArgumentException("A transação não está associada a uma conexão.", nameof(transaction));
 
-        if (ownsConnection && connection.State != ConnectionState.Open)
+        if (
+            externalConnection is not null
+            && transaction is not null
+            && !ReferenceEquals(transaction.Connection, externalConnection)
+        )
+            throw new ArgumentException(
+                "A transação deve pertencer à conexão informada.",
+                nameof(transaction)
+            );
+
+        var ownsConnection = externalConnection is null && transaction is null;
+        var connection = externalConnection ?? transaction?.Connection ?? _connectionFactory();
+
+        if (connection.State != ConnectionState.Open)
             connection.Open();
 
-        var tx = transaction ?? (ownsTransaction ? connection.BeginTransaction() : null);
+        var ownsTransaction = transaction is null;
+        var tx = transaction ?? connection.BeginTransaction();
 
         try
         {
             await connection.ExecuteAsync(
-                "DELETE FROM ItensVenda WHERE VendaId = @Id;",
+                """
+                DELETE FROM ItensVenda
+                 WHERE VendaId = @Id
+                   AND EXISTS (
+                       SELECT 1
+                         FROM Vendas
+                        WHERE Id = @Id
+                          AND Status = 'Aberta'
+                   );
+                """,
                 new { Id = id },
                 tx
             );
 
             var afetadas = await connection.ExecuteAsync(
-                "DELETE FROM Vendas WHERE Id = @Id;",
+                "DELETE FROM Vendas WHERE Id = @Id AND Status = 'Aberta';",
                 new { Id = id },
                 tx
             );
 
-            if (ownsTransaction)
-                tx?.Commit();
+            if (afetadas == 0)
+            {
+                if (ownsTransaction)
+                    tx.Rollback();
+                return false;
+            }
 
-            return afetadas > 0;
+            if (ownsTransaction)
+                tx.Commit();
+
+            return true;
         }
         catch
         {
             if (ownsTransaction)
-                tx?.Rollback();
+                tx.Rollback();
             throw;
         }
         finally
         {
             if (ownsTransaction)
-                tx?.Dispose();
+                tx.Dispose();
 
             if (ownsConnection)
                 connection.Dispose();
@@ -324,9 +470,9 @@ public class VendaRepository(Func<IDbConnection> connectionFactory) : IVendaRepo
             new
             {
                 venda.ClienteId,
-                DataHora = venda.DataHora.ToString("yyyy-MM-dd HH:mm:ss"),
-                FormaPagamento = venda.FormaPagamento.ToString(),
-                Status = venda.Status.ToString(),
+                DataHora = FormatarDataHora(venda.DataHora),
+                FormaPagamento = FormaPagamentoParaBanco(venda.FormaPagamento),
+                Status = StatusVendaParaBanco(venda.Status),
             },
             transaction
         );
@@ -359,7 +505,7 @@ public class VendaRepository(Func<IDbConnection> connectionFactory) : IVendaRepo
     {
         var itemRows = await connection.QueryAsync<ItemVendaRow>(
             @"
-            SELECT Id, VendaId, ProdutoId, Quantidade, PrecoUnitario
+            SELECT Id, VendaId, ProdutoId, Quantidade, CAST(PrecoUnitario AS TEXT) AS PrecoUnitario
               FROM ItensVenda
              WHERE VendaId = @VendaId
              ORDER BY Id ASC;",
@@ -374,30 +520,37 @@ public class VendaRepository(Func<IDbConnection> connectionFactory) : IVendaRepo
                 r.VendaId,
                 r.ProdutoId,
                 r.Quantidade,
-                r.PrecoUnitario
+                decimal.Parse(r.PrecoUnitario, CultureInfo.InvariantCulture)
             )),
         ];
     }
 
     private static Venda MapearVendaParaDominio(VendaRow vRow, IEnumerable<ItemVenda> itens)
     {
+        var formaPagamento = vRow.FormaPagamento switch
+        {
+            "Dinheiro" or "DINHEIRO" => FormaPagamento.DINHEIRO,
+            "Pix" or "PIX" => FormaPagamento.PIX,
+            "CartaoCredito" or "CARTAO_CREDITO" => FormaPagamento.CARTAO_CREDITO,
+            "CartaoDebito" or "CARTAO_DEBITO" => FormaPagamento.CARTAO_DEBITO,
+            _ => throw new DomainException(
+                $"Forma de pagamento inválida no banco: '{vRow.FormaPagamento}'."
+            ),
+        };
+
+        var statusVenda = StatusVendaDoBanco(vRow.Status);
+
         if (
-            !Enum.TryParse<FormaPagamento>(
-                vRow.FormaPagamento,
-                ignoreCase: true,
-                out var formaPagamento
+            !DateTime.TryParse(
+                vRow.DataHora,
+                CultureInfo.InvariantCulture,
+                DateTimeStyles.AssumeLocal,
+                out var dataHoraConvertida
             )
         )
             throw new DomainException(
-                $"Forma de pagamento inválida no banco: '{vRow.FormaPagamento}'."
+                $"Data/hora inválida no banco para a venda #{vRow.Id}: '{vRow.DataHora}'."
             );
-
-        if (!Enum.TryParse<StatusVenda>(vRow.Status, ignoreCase: true, out var statusVenda))
-            throw new DomainException($"Status de venda inválido no banco: '{vRow.Status}'.");
-
-        DateTime? dataHoraConvertida = DateTime.TryParse(vRow.DataHora, out var parsedDate)
-            ? parsedDate
-            : null;
 
         return new Venda(
             vRow.Id,
@@ -406,6 +559,137 @@ public class VendaRepository(Func<IDbConnection> connectionFactory) : IVendaRepo
             statusVenda,
             dataHoraConvertida,
             itens
+        );
+    }
+
+    private static string FormatarDataHora(DateTime dataHora)
+    {
+        return dataHora.ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture);
+    }
+
+    private static string FormaPagamentoParaBanco(FormaPagamento formaPagamento)
+    {
+        return formaPagamento switch
+        {
+            FormaPagamento.DINHEIRO => "Dinheiro",
+            FormaPagamento.PIX => "Pix",
+            FormaPagamento.CARTAO_CREDITO => "CartaoCredito",
+            FormaPagamento.CARTAO_DEBITO => "CartaoDebito",
+            _ => throw new DomainException("Forma de pagamento inválida."),
+        };
+    }
+
+    private static string StatusVendaParaBanco(StatusVenda status)
+    {
+        return status switch
+        {
+            StatusVenda.ABERTA => "Aberta",
+            StatusVenda.CONCLUIDA => "Concluida",
+            StatusVenda.CANCELADA => "Cancelada",
+            _ => throw new DomainException("Status de venda inválido."),
+        };
+    }
+
+    private static string TipoMovimentacaoParaBanco(TipoMovimentacao tipo)
+    {
+        return tipo switch
+        {
+            TipoMovimentacao.ENTRADA => "Entrada",
+            TipoMovimentacao.SAIDA => "Saida",
+            _ => throw new DomainException("Tipo de movimentação inválido."),
+        };
+    }
+
+    private static StatusVenda StatusVendaDoBanco(string status)
+    {
+        if (
+            !Enum.TryParse<StatusVenda>(status, ignoreCase: true, out var statusVenda)
+            || !Enum.IsDefined(statusVenda)
+        )
+            throw new DomainException($"Status de venda inválido no banco: '{status}'.");
+
+        return statusVenda;
+    }
+
+    private static async Task AplicarMovimentacaoDeVendaAsync(
+        IDbConnection connection,
+        IDbTransaction transaction,
+        int vendaId,
+        ItemVenda item,
+        TipoMovimentacao tipo,
+        DateTime dataHora
+    )
+    {
+        var atualizadas = tipo switch
+        {
+            TipoMovimentacao.SAIDA => await connection.ExecuteAsync(
+                """
+                UPDATE Produtos
+                   SET Quantidade = Quantidade - @Quantidade
+                 WHERE Id = @ProdutoId
+                   AND Quantidade >= @Quantidade;
+                """,
+                new { item.ProdutoId, item.Quantidade },
+                transaction
+            ),
+            TipoMovimentacao.ENTRADA => await connection.ExecuteAsync(
+                """
+                UPDATE Produtos
+                   SET Quantidade = Quantidade + @Quantidade
+                 WHERE Id = @ProdutoId
+                   AND Quantidade <= @Limite - @Quantidade;
+                """,
+                new
+                {
+                    item.ProdutoId,
+                    item.Quantidade,
+                    Limite = int.MaxValue,
+                },
+                transaction
+            ),
+            _ => throw new DomainException("Tipo de movimentação inválido."),
+        };
+
+        if (atualizadas == 0)
+        {
+            var estoqueAtual = await connection.QueryFirstOrDefaultAsync<int?>(
+                "SELECT Quantidade FROM Produtos WHERE Id = @ProdutoId;",
+                new { item.ProdutoId },
+                transaction
+            );
+
+            if (!estoqueAtual.HasValue)
+                throw new DomainException(
+                    $"Produto #{item.ProdutoId} não encontrado no estoque."
+                );
+
+            if (tipo == TipoMovimentacao.SAIDA)
+                throw new DomainException(
+                    $"Estoque insuficiente para o produto #{item.ProdutoId}. Disponível: {estoqueAtual.Value}, solicitado: {item.Quantidade}."
+                );
+
+            throw new DomainException(
+                $"O estorno da venda #{vendaId} excede o limite de estoque permitido."
+            );
+        }
+
+        await connection.ExecuteAsync(
+            """
+            INSERT INTO Movimentacoes (ProdutoId, VendaId, Quantidade, Tipo, Motivo, DataHora)
+            VALUES (@ProdutoId, @VendaId, @Quantidade, @Tipo, @Motivo, @DataHora);
+            """,
+            new
+            {
+                item.ProdutoId,
+                VendaId = vendaId,
+                item.Quantidade,
+                Tipo = TipoMovimentacaoParaBanco(tipo),
+                Motivo = tipo == TipoMovimentacao.ENTRADA
+                    ? $"Estorno por cancelamento da Venda #{vendaId}"
+                    : $"Venda #{vendaId}",
+                DataHora = FormatarDataHora(dataHora),
+            },
+            transaction
         );
     }
 
@@ -424,6 +708,6 @@ public class VendaRepository(Func<IDbConnection> connectionFactory) : IVendaRepo
         public int VendaId { get; set; }
         public int ProdutoId { get; set; }
         public int Quantidade { get; set; }
-        public decimal PrecoUnitario { get; set; }
+        public string PrecoUnitario { get; set; } = "0";
     }
 }

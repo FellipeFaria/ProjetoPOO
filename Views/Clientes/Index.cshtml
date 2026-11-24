@@ -1,0 +1,72 @@
+@model IEnumerable<ProjetoPOO.Models.Cliente>
+
+@{
+    ViewData["Title"] = "Clientes";
+}
+
+<h2>Clientes</h2>
+
+@if (TempData["Sucesso"] is string sucesso)
+{
+    <div class="alert alert-success">@sucesso</div>
+}
+@if (TempData["Erro"] is string erro)
+{
+    <div class="alert alert-danger">@erro</div>
+}
+
+<form asp-action="Criar" method="post" class="row g-2 mb-4">
+    @Html.AntiForgeryToken()
+    <div class="col-md-4">
+        <input type="text" name="nome" class="form-control" placeholder="Nome completo *" required />
+    </div>
+    <div class="col-md-2">
+        <input type="text" name="cpf" class="form-control" placeholder="CPF" />
+    </div>
+    <div class="col-md-3">
+        <input type="email" name="email" class="form-control" placeholder="E-mail" />
+    </div>
+    <div class="col-md-2">
+        <input type="text" name="telefone" class="form-control" placeholder="Telefone" />
+    </div>
+    <div class="col-md-1 d-grid">
+        <button type="submit" class="btn btn-success">Salvar</button>
+    </div>
+</form>
+
+@if (!Model.Any())
+{
+    <div class="alert alert-info">Ainda não há clientes cadastrados.</div>
+}
+else
+{
+<table class="table table-hover">
+    <thead>
+        <tr>
+            <th>Id</th>
+            <th>Nome</th>
+            <th>CPF</th>
+            <th>E-mail</th>
+            <th>Telefone</th>
+            <th>Ações</th>
+        </tr>
+    </thead>
+    <tbody>
+        @foreach (var cliente in Model)
+        {
+            <tr>
+                <td>@cliente.Id</td>
+                <td>@cliente.Nome</td>
+                <td>@(cliente.Cpf ?? "-")</td>
+                <td>@(cliente.Email ?? "-")</td>
+                <td>@(cliente.Telefone ?? "-")</td>
+                <td>
+                    <a asp-action="Editar" asp-route-id="@cliente.Id" class="btn btn-sm btn-outline-primary">
+                        Editar
+                    </a>
+                </td>
+            </tr>
+        }
+    </tbody>
+</table>
+}

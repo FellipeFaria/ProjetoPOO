@@ -57,6 +57,9 @@ public abstract class Produto
         if (quantidade <= 0)
             throw new DomainException("A quantidade de entrada deve ser maior que zero");
 
+        if (quantidade > int.MaxValue - Quantidade)
+            throw new DomainException("A quantidade de estoque excede o limite permitido.");
+
         Quantidade += quantidade;
     }
 
@@ -69,6 +72,8 @@ public abstract class Produto
             throw new DomainException(
                 $"Estoque insuficiente para '{Nome}'. Disponivel: {Quantidade}, solicitado: {quantidade}"
             );
+
+        Quantidade -= quantidade;
     }
 
     public virtual decimal CalcularValorTotalEstoque()

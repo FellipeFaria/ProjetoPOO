@@ -1,0 +1,105 @@
+@using ProjetoPOO.Models
+@using ProjetoPOO.Models.Enums
+@model Produto
+
+@{
+    ViewData["Title"] = "Editar Produto";
+}
+
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <h2>Editar Produto</h2>
+    <a asp-action="Index" class="btn btn-outline-secondary">Voltar ao catálogo</a>
+</div>
+
+@if (TempData["Erro"] is string erro)
+{
+    <div class="alert alert-danger">@erro</div>
+}
+
+<form asp-action="Editar" asp-route-id="@Model.Id" method="post" class="row g-3">
+    @Html.AntiForgeryToken()
+    <div class="col-md-6">
+        <label for="nome" class="form-label">Nome</label>
+        <input id="nome" type="text" name="nome" value="@Model.Nome" class="form-control" required />
+    </div>
+    <div class="col-md-3">
+        <label for="preco" class="form-label">Preço</label>
+        <input id="preco" type="text" name="preco" value="@Model.Preco.ToString("0.00")"
+               inputmode="decimal" class="form-control" required />
+    </div>
+    <div class="col-md-3">
+        <label class="form-label">Tipo</label>
+        <input type="text" value="@Model.TipoProduto" class="form-control" readonly />
+    </div>
+
+    @if (Model is Videogame videogame)
+    {
+        <div class="col-md-6">
+            <label for="marca" class="form-label">Marca</label>
+            <input id="marca" type="text" name="marca" value="@videogame.Marca" class="form-control" required />
+        </div>
+        <div class="col-md-6">
+            <label for="modelo" class="form-label">Modelo</label>
+            <input id="modelo" type="text" name="modelo" value="@videogame.Modelo" class="form-control" required />
+        </div>
+        <div class="col-md-6">
+            <label for="armazenamento" class="form-label">Armazenamento (GB)</label>
+            <input id="armazenamento" type="number" name="armazenamento" value="@videogame.Armazenamento"
+                   min="0" class="form-control" required />
+        </div>
+        <div class="col-md-6">
+            <label for="memoriaRam" class="form-label">Memória RAM (GB)</label>
+            <input id="memoriaRam" type="number" name="memoriaRam" value="@videogame.MemoriaRam"
+                   min="0" class="form-control" required />
+        </div>
+    }
+    else if (Model is Jogo jogo)
+    {
+        <div class="col-md-6">
+            <label for="desenvolvedor" class="form-label">Desenvolvedor</label>
+            <input id="desenvolvedor" type="text" name="desenvolvedor" value="@jogo.Desenvolvedor"
+                   class="form-control" required />
+        </div>
+        <div class="col-md-6">
+            <label for="anoLancamento" class="form-label">Ano de lançamento</label>
+            <input id="anoLancamento" type="number" name="anoLancamento" value="@jogo.AnoLancamento"
+                   min="1" class="form-control" required />
+        </div>
+        <div class="col-12">
+            <label for="plataformasCsv" class="form-label">Plataformas</label>
+            <input id="plataformasCsv" type="text" name="plataformasCsv"
+                   value="@string.Join(", ", jogo.Plataformas.Select(plataforma => plataforma.Nome))"
+                   class="form-control" placeholder="PC, PlayStation 5, Xbox Series X|S" />
+            <div class="form-text">Separe as plataformas por vírgula.</div>
+        </div>
+    }
+    else if (Model is Acessorio acessorio)
+    {
+        <div class="col-md-4">
+            <label for="marca" class="form-label">Marca</label>
+            <input id="marca" type="text" name="marca" value="@acessorio.Marca" class="form-control" required />
+        </div>
+        <div class="col-md-4">
+            <label for="modelo" class="form-label">Modelo</label>
+            <input id="modelo" type="text" name="modelo" value="@acessorio.Modelo" class="form-control" required />
+        </div>
+        <div class="col-md-4">
+            <label for="tipo" class="form-label">Tipo</label>
+            <select id="tipo" name="tipo" class="form-select" required>
+                @foreach (var tipoAcessorio in Enum.GetValues<TipoAcessorio>())
+                {
+                    <option value="@((int)tipoAcessorio)"
+                            selected="@(acessorio.Tipo == tipoAcessorio ? "selected" : null)">
+                        @tipoAcessorio
+                    </option>
+                }
+            </select>
+        </div>
+    }
+
+    <div class="col-12">
+        <p class="text-muted mb-2">Estoque atual: <strong>@Model.Quantidade</strong>. O estoque é alterado pelas movimentações e vendas.</p>
+        <button type="submit" class="btn btn-primary">Salvar alterações</button>
+        <a asp-action="Index" class="btn btn-outline-secondary">Cancelar</a>
+    </div>
+</form>

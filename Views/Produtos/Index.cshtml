@@ -1,0 +1,69 @@
+@model IEnumerable<ProjetoPOO.Models.Produto>
+
+@{
+    ViewData["Title"] = "Catálogo de Produtos";
+}
+
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <h2>Catálogo de Produtos</h2>
+    <a asp-action="Criar" class="btn btn-primary">Novo Produto</a>
+</div>
+
+@if (TempData["Sucesso"] is string sucesso)
+{
+    <div class="alert alert-success">@sucesso</div>
+}
+@if (TempData["Erro"] is string erro)
+{
+    <div class="alert alert-danger">@erro</div>
+}
+
+@if (!Model.Any())
+{
+    <div class="alert alert-info">Ainda não há produtos cadastrados.</div>
+}
+else
+{
+<table class="table table-striped align-middle">
+    <thead>
+        <tr>
+            <th>Id</th>
+            <th>Tipo</th>
+            <th>Nome</th>
+            <th>Especificações</th>
+            <th>Estoque</th>
+            <th>Preço</th>
+            <th>Ações</th>
+        </tr>
+    </thead>
+    <tbody>
+        @foreach (var produto in Model)
+        {
+            <tr>
+                <td>@produto.Id</td>
+                <td><span class="badge bg-secondary">@produto.TipoProduto</span></td>
+                <td><strong>@produto.Nome</strong></td>
+                <td>
+                    <ul class="list-unstyled mb-0 small">
+                        @foreach (var spec in produto.ObterResumoEspecifico())
+                        {
+                            <li><strong>@spec.Key:</strong> @spec.Value</li>
+                        }
+                    </ul>
+                </td>
+                <td>@produto.Quantidade</td>
+                <td>@produto.Preco.ToString("C")</td>
+                <td class="text-end">
+                    <a asp-action="Editar" asp-route-id="@produto.Id" class="btn btn-sm btn-outline-primary">
+                        Editar
+                    </a>
+                    <form asp-action="Excluir" asp-route-id="@produto.Id" method="post" class="d-inline">
+                        @Html.AntiForgeryToken()
+                        <button type="submit" class="btn btn-sm btn-outline-danger">Excluir</button>
+                    </form>
+                </td>
+            </tr>
+        }
+    </tbody>
+</table>
+}
